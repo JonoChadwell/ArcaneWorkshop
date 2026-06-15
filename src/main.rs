@@ -17,6 +17,14 @@ struct PlayerSettings {
     camera_sensitivity: Vec2,
 }
 
+#[derive(Component)]
+struct CursorInteraction {
+    radius: f32,
+}
+
+#[derive(Component)]
+struct MinDistText;
+
 impl Default for PlayerSettings {
     fn default() -> Self {
         Self {
@@ -35,8 +43,8 @@ fn main() {
     App::new()
         .insert_resource(PlayerSettings::default())
         .add_plugins(DefaultPlugins)
-        .add_systems(Startup, setup)
-        .add_systems(Update, move_camera)
+    .add_systems(Startup, setup)
+    .add_systems(Update, (move_camera, cursor_interaction))
         .run();
 }
 
@@ -56,7 +64,8 @@ fn setup(
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, 0.5, 0.0),
+        Transform::from_xyz(0.0, 1.5, 0.0),
+        CursorInteraction { radius: 0.7 },
     ));
     // light
     commands.spawn((
@@ -69,8 +78,16 @@ fn setup(
     // camera
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(-2.5, 1.7, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
         PlayerCamera,
+    ));
+
+    // persistent on-screen text for min_dist at x=12, y=12
+    commands.spawn((
+        Text::new(
+            "min_dist: N/A",
+        ),
+        MinDistText,
     ));
 }
 
@@ -143,4 +160,52 @@ fn move_camera(
         movement.y = 0.0;
         camera.translation += movement.normalize() * SPEED * time.delta_secs();
     }
+}
+
+fn ray_dist_to_sphere(ray: Ray3d , sphere_center: Vec3, sphere_radius: f32) -> Option<f32> {
+    let to_sphere = sphere_center - ray.origin;
+    let t = to_sphere.dot(ray.direction.normalize());
+    if t < 0.0 {
+        return None;
+    }
+    let closest_point = ray.origin + ray.direction * t;
+    let distance = (sphere_center - closest_point).length() - sphere_radius;
+    if distance < 0.0 {
+        Some(t)
+    } else {
+        None
+    }
+}
+
+fn cursor_interaction(
+    player_camera_components: Single<(&Camera, &GlobalTransform), With<PlayerCamera>>,
+    window: Single<&mut Window, With<PrimaryWindow>>,
+    interactables: Query<(&GlobalTransform, &CursorInteraction)>,
+    mut text: Single<&mut Text, With<MinDistText>>,
+) {
+    const ACTIVATION_TIME: f32 = 2.0;
+    const MAX_DISTANCE: f32 = 6.0;
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+
+    let (camera, camera_transform) = player_camera_components.into_inner();
+    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_pos) else {
+        return;
+    };
+
+    let mut min_dist = f32::INFINITY;
+    for (transform, interaction) in interactables.iter() {
+        if let Some(dist) = ray_dist_to_sphere(ray, transform.translation(), interaction.radius) {
+            if dist < MAX_DISTANCE {
+                min_dist = min_dist.min(dist);
+            }
+        }
+    }
+    let display = if min_dist.is_finite() {
+        format!("min_dist: {:.3}", min_dist)
+    } else {
+        "min_dist: inf".to_string()
+    };
+    ***text = display;
 }
