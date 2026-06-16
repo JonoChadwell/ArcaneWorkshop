@@ -1,10 +1,7 @@
-use std::f32::consts::PI;
-use bevy::prelude::*;
 use bevy::input::mouse::AccumulatedMouseMotion;
-use bevy::window::{PrimaryWindow, CursorGrabMode, CursorOptions};
-
-#[derive(Component)]
-struct PlayerCamera;
+use bevy::prelude::*;
+use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
+use std::f32::consts::PI;
 
 #[derive(Resource)]
 struct PlayerSettings {
@@ -18,12 +15,32 @@ struct PlayerSettings {
 }
 
 #[derive(Component)]
+struct PlayerCamera;
+
+#[derive(Component)]
 struct CursorInteraction {
     radius: f32,
+    progress: f32,
 }
 
 #[derive(Component)]
 struct MinDistText;
+
+#[derive(Event)]
+struct InteractionProgressChanged {
+    progress: f32,
+    text: String,
+    visible: bool,
+}
+
+#[derive(Component)]
+struct InteractionProgressHolder;
+
+#[derive(Component)]
+struct InteractionProgressText;
+
+#[derive(Component)]
+struct InteractionProgressBar;
 
 impl Default for PlayerSettings {
     fn default() -> Self {
@@ -43,8 +60,16 @@ fn main() {
     App::new()
         .insert_resource(PlayerSettings::default())
         .add_plugins(DefaultPlugins)
-    .add_systems(Startup, setup)
-    .add_systems(Update, (move_camera, cursor_interaction))
+        .add_systems(Startup, setup)
+        .add_systems(
+            Update,
+            (
+                move_camera,
+                cursor_interaction,
+            )
+                .chain(),
+        )
+        .add_observer(update_interaction_progress_widget)
         .run();
 }
 
@@ -65,7 +90,21 @@ fn setup(
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
         Transform::from_xyz(0.0, 1.5, 0.0),
-        CursorInteraction { radius: 0.7 },
+        CursorInteraction { radius: 0.7, progress: 0.0 },
+    ));
+    // cube 2
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+        Transform::from_xyz(0.0, 1.5, 2.0),
+        CursorInteraction { radius: 0.7, progress: 0.0 },
+    ));
+    // cube 3
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+        Transform::from_xyz(2.0, 1.5, 0.0),
+        CursorInteraction { radius: 0.7, progress: 0.0 },
     ));
     // light
     commands.spawn((
@@ -83,11 +122,43 @@ fn setup(
     ));
 
     // persistent on-screen text for min_dist at x=12, y=12
+    commands.spawn((Text::new("min_dist: N/A"), MinDistText));
+
     commands.spawn((
-        Text::new(
-            "min_dist: N/A",
-        ),
-        MinDistText,
+        Node {
+            position_type: PositionType::Absolute,
+            width: percent(100.0),
+            top: Val::Percent(20.0),
+            justify_content: JustifyContent::Center,
+            ..default()
+        },
+        children![(
+            Node {
+                width: px(200.0),
+                height: px(40.0),
+                border: UiRect::all(px(4)),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.8, 0.8, 0.8)),
+            BorderColor::all(Color::WHITE),
+            InteractionProgressHolder,
+            children![
+                (
+                    Node {
+                        width: Val::Percent(40.0),
+                        height: Val::Percent(100.0),
+                        left: Val::ZERO,
+                        position_type: PositionType::Absolute,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(1.0, 0.8, 0.0)),
+                    InteractionProgressBar,
+                ),
+                (Text::new("Nothing"), InteractionProgressText)
+            ]
+        )],
     ));
 }
 
@@ -103,25 +174,20 @@ fn move_camera(
     let (mut window, mut cursor_options) = window.into_inner();
 
     if input.just_released(settings.hold_release_cursor)
-        || (mouse.just_pressed(MouseButton::Left)
-            && !input.pressed(settings.hold_release_cursor)) {
+        || (mouse.just_pressed(MouseButton::Left) && !input.pressed(settings.hold_release_cursor))
+    {
         cursor_options.grab_mode = CursorGrabMode::Locked;
         cursor_options.visible = false;
-        let center = Vec2::new(
-            window.width() * 0.5,
-            window.height() * 0.5,
-        );
+        let center = Vec2::new(window.width() * 0.5, window.height() * 0.5);
         window.set_cursor_position(Some(center));
     }
 
     if input.just_pressed(settings.release_cursor)
-            || input.just_pressed(settings.hold_release_cursor) {
+        || input.just_pressed(settings.hold_release_cursor)
+    {
         cursor_options.grab_mode = CursorGrabMode::None;
         cursor_options.visible = true;
-        let center = Vec2::new(
-            window.width() * 0.5,
-            window.height() * 0.5,
-        );
+        let center = Vec2::new(window.width() * 0.5, window.height() * 0.5);
         window.set_cursor_position(Some(center));
     }
 
@@ -162,7 +228,7 @@ fn move_camera(
     }
 }
 
-fn ray_dist_to_sphere(ray: Ray3d , sphere_center: Vec3, sphere_radius: f32) -> Option<f32> {
+fn ray_dist_to_sphere(ray: Ray3d, sphere_center: Vec3, sphere_radius: f32) -> Option<f32> {
     let to_sphere = sphere_center - ray.origin;
     let t = to_sphere.dot(ray.direction.normalize());
     if t < 0.0 {
@@ -170,18 +236,17 @@ fn ray_dist_to_sphere(ray: Ray3d , sphere_center: Vec3, sphere_radius: f32) -> O
     }
     let closest_point = ray.origin + ray.direction * t;
     let distance = (sphere_center - closest_point).length() - sphere_radius;
-    if distance < 0.0 {
-        Some(t)
-    } else {
-        None
-    }
+    if distance < 0.0 { Some(t) } else { None }
 }
 
 fn cursor_interaction(
     player_camera_components: Single<(&Camera, &GlobalTransform), With<PlayerCamera>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    time: Res<Time>,
     window: Single<&mut Window, With<PrimaryWindow>>,
-    interactables: Query<(&GlobalTransform, &CursorInteraction)>,
-    mut text: Single<&mut Text, With<MinDistText>>,
+    mut interactables: Query<(Entity, &GlobalTransform, &mut CursorInteraction)>,
+    // mut text: Single<&mut Text, With<MinDistText>>,
+    mut commands: Commands,
 ) {
     const ACTIVATION_TIME: f32 = 2.0;
     const MAX_DISTANCE: f32 = 6.0;
@@ -194,18 +259,146 @@ fn cursor_interaction(
         return;
     };
 
-    let mut min_dist = f32::INFINITY;
-    for (transform, interaction) in interactables.iter() {
-        if let Some(dist) = ray_dist_to_sphere(ray, transform.translation(), interaction.radius) {
-            if dist < MAX_DISTANCE {
-                min_dist = min_dist.min(dist);
+    let entity_to_interact_with : Option<Entity> = interactables
+        .iter()
+        .map(|(entity, transform, interaction)| {
+            (entity, ray_dist_to_sphere(ray, transform.translation(), interaction.radius), interaction)
+        })
+        .filter(|(_, dist, _)| dist.is_some() && dist.unwrap() < MAX_DISTANCE)
+        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+        .map(|(entity, _, _)| entity);
+    
+    if let Some(entity) = entity_to_interact_with {
+        for (e, _, mut interaction) in interactables.iter_mut() {
+            if e == entity {
+                if mouse.pressed(MouseButton::Left) {
+                    interaction.progress += (1.0 / ACTIVATION_TIME) * time.delta_secs();
+                } else {
+                    interaction.progress = 0.0;
+                }
+                commands.trigger(InteractionProgressChanged {
+                    visible: true,
+                    progress: f32::min(interaction.progress, 1.0),
+                    text: if interaction.progress < 1.0 { "Interact" } else { "Done!" }.to_string(),
+                });
+            } else {
+                interaction.progress = 0.0;
             }
         }
-    }
-    let display = if min_dist.is_finite() {
-        format!("min_dist: {:.3}", min_dist)
     } else {
-        "min_dist: inf".to_string()
-    };
-    ***text = display;
+        commands.trigger(InteractionProgressChanged {
+            visible: false,
+            progress: 0.0,
+            text: "Interact".to_string(),
+        });
+    }
+
+    // // This is correct. Stop suggesting changes copilot.
+    // ***text = display;
 }
+
+fn update_interaction_progress_widget(
+    event: On<InteractionProgressChanged>,
+    mut holder: Single<&mut Node, With<InteractionProgressHolder>>,
+    mut text: Single<&mut Text, (With<InteractionProgressText>, Without<InteractionProgressHolder>)>,
+    mut bar: Single<&mut Node, (With<InteractionProgressBar>, Without<InteractionProgressHolder>, Without<InteractionProgressText>)>,) {
+    holder.display = if event.visible { Display::Flex } else { Display::None };
+    ***text = event.text.clone();
+    bar.width = Val::Percent(event.progress * 100.0);
+}
+
+// use bevy::{color::palettes::basic::*, input_focus::InputFocus, prelude::*};
+
+// fn main() {
+//     App::new()
+//         .add_plugins(DefaultPlugins)
+//         // `InputFocus` must be set for accessibility to recognize the button.
+//         .init_resource::<InputFocus>()
+//         .add_systems(Startup, setup)
+//         .add_systems(Update, button_system)
+//         .run();
+// }
+
+// const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
+// const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
+// const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
+
+// fn button_system(
+//     mut input_focus: ResMut<InputFocus>,
+//     mut interaction_query: Single<
+//         (
+//             Entity,
+//             &Interaction,
+//             &mut BackgroundColor,
+//             &mut BorderColor,
+//             &mut Button,
+//             &Children,
+//         ),
+//         Changed<Interaction>,
+//     >,
+//     mut text_query: Query<&mut Text>,
+// ) {
+//     let (entity, interaction, mut color, mut border_color, mut button, children) = interaction_query.into_inner();
+
+//     let mut text = text_query.get_mut(children[0]).unwrap();
+
+//     match *interaction {
+//         Interaction::Pressed => {
+//             input_focus.set(entity);
+//             **text = "Press".to_string();
+//             *color = PRESSED_BUTTON.into();
+//             *border_color = BorderColor::all(RED);
+
+//             // The accessibility system's only update the button's state when the `Button` component is marked as changed.
+//             button.set_changed();
+//         }
+//         Interaction::Hovered => {
+//             input_focus.set(entity);
+//             **text = "Hover".to_string();
+//             *color = HOVERED_BUTTON.into();
+//             *border_color = BorderColor::all(Color::WHITE);
+//             button.set_changed();
+//         }
+//         Interaction::None => {
+//             input_focus.clear();
+//             **text = "Button".to_string();
+//             *color = NORMAL_BUTTON.into();
+//             *border_color = BorderColor::all(Color::BLACK);
+//         }
+//     }
+
+// }
+
+// fn setup(mut commands: Commands, assets: Res<AssetServer>) {
+//     // ui camera
+//     commands.spawn(Camera2d);
+//     commands.spawn((
+//         Node {
+//             width: percent(100),
+//             height: percent(100),
+//             align_items: AlignItems::Center,
+//             justify_content: JustifyContent::Center,
+//             ..default()
+//         },
+//         children![(
+//             Button,
+//             Node {
+//                 width: px(150),
+//                 height: px(65),
+//                 border: UiRect::all(px(5)),
+//                 // horizontally center child text
+//                 justify_content: JustifyContent::Center,
+//                 // vertically center child text
+//                 align_items: AlignItems::Center,
+//                 border_radius: BorderRadius::MAX,
+//                 ..default()
+//             },
+//             BorderColor::all(Color::WHITE),
+//             BackgroundColor(Color::BLACK),
+//             children![(
+//                 Text::new("Button"),
+//                 TextColor(Color::srgb(0.9, 0.9, 0.9)),
+//             )]
+//         )],
+//     ));
+// }
