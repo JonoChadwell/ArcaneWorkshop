@@ -2,6 +2,8 @@ use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 use std::f32::consts::PI;
+mod alchemy;
+// use alchemy::Conflicts;
 
 #[derive(Resource)]
 struct PlayerSettings {
