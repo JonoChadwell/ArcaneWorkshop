@@ -63,14 +63,7 @@ fn main() {
         .insert_resource(PlayerSettings::default())
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (
-                move_camera,
-                cursor_interaction,
-            )
-                .chain(),
-        )
+        .add_systems(Update, (move_camera, cursor_interaction).chain())
         .add_observer(update_interaction_progress_widget)
         .run();
 }
@@ -92,21 +85,30 @@ fn setup(
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
         Transform::from_xyz(0.0, 1.5, 0.0),
-        CursorInteraction { radius: 0.7, progress: 0.0 },
+        CursorInteraction {
+            radius: 0.7,
+            progress: 0.0,
+        },
     ));
     // cube 2
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
         Transform::from_xyz(0.0, 1.5, 2.0),
-        CursorInteraction { radius: 0.7, progress: 0.0 },
+        CursorInteraction {
+            radius: 0.7,
+            progress: 0.0,
+        },
     ));
     // cube 3
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
         Transform::from_xyz(2.0, 1.5, 0.0),
-        CursorInteraction { radius: 0.7, progress: 0.0 },
+        CursorInteraction {
+            radius: 0.7,
+            progress: 0.0,
+        },
     ));
     // light
     commands.spawn((
@@ -261,15 +263,19 @@ fn cursor_interaction(
         return;
     };
 
-    let entity_to_interact_with : Option<Entity> = interactables
+    let entity_to_interact_with: Option<Entity> = interactables
         .iter()
         .map(|(entity, transform, interaction)| {
-            (entity, ray_dist_to_sphere(ray, transform.translation(), interaction.radius), interaction)
+            (
+                entity,
+                ray_dist_to_sphere(ray, transform.translation(), interaction.radius),
+                interaction,
+            )
         })
         .filter(|(_, dist, _)| dist.is_some() && dist.unwrap() < MAX_DISTANCE)
         .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
         .map(|(entity, _, _)| entity);
-    
+
     if let Some(entity) = entity_to_interact_with {
         for (e, _, mut interaction) in interactables.iter_mut() {
             if e == entity {
@@ -281,7 +287,12 @@ fn cursor_interaction(
                 commands.trigger(InteractionProgressChanged {
                     visible: true,
                     progress: f32::min(interaction.progress, 1.0),
-                    text: if interaction.progress < 1.0 { "Interact" } else { "Done!" }.to_string(),
+                    text: if interaction.progress < 1.0 {
+                        "Interact"
+                    } else {
+                        "Done!"
+                    }
+                    .to_string(),
                 });
             } else {
                 interaction.progress = 0.0;
@@ -302,9 +313,27 @@ fn cursor_interaction(
 fn update_interaction_progress_widget(
     event: On<InteractionProgressChanged>,
     mut holder: Single<&mut Node, With<InteractionProgressHolder>>,
-    mut text: Single<&mut Text, (With<InteractionProgressText>, Without<InteractionProgressHolder>)>,
-    mut bar: Single<&mut Node, (With<InteractionProgressBar>, Without<InteractionProgressHolder>, Without<InteractionProgressText>)>,) {
-    holder.display = if event.visible { Display::Flex } else { Display::None };
+    mut text: Single<
+        &mut Text,
+        (
+            With<InteractionProgressText>,
+            Without<InteractionProgressHolder>,
+        ),
+    >,
+    mut bar: Single<
+        &mut Node,
+        (
+            With<InteractionProgressBar>,
+            Without<InteractionProgressHolder>,
+            Without<InteractionProgressText>,
+        ),
+    >,
+) {
+    holder.display = if event.visible {
+        Display::Flex
+    } else {
+        Display::None
+    };
     ***text = event.text.clone();
     bar.width = Val::Percent(event.progress * 100.0);
 }
