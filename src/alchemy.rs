@@ -1,6 +1,7 @@
 use bitflags::bitflags;
 use std::collections::HashMap;
 
+#[derive(Clone, Hash, Eq, PartialEq)]
 enum InteractionType {
     Internal,
     Contact,
@@ -104,10 +105,102 @@ fn internal_interaction(substance: &mut Substance) {
             }
         }
     };
-    let merges = |a: Intent, b: Intent, into: Intent| {};
 
     becomes(Intent::Plant, Intent::Leaf, 5);
     becomes(Intent::Plant, Intent::Growth, 2);
+
+    let mut merges = |a: Intent, b: Intent, into: Intent, percent: i32| {
+        let a_val = *substance.values.get(&a).unwrap_or(&0);
+        let b_val = *substance.values.get(&b).unwrap_or(&0);
+        let into_val = *substance.values.get(&into).unwrap_or(&0);
+        let target = (std::cmp::min(a_val, b_val) * percent) / 100;
+        if into_val < target {
+            *substance.values.entry(a).or_insert(1) -= 1;
+            *substance.values.entry(b).or_insert(1) -= 1;
+            *substance.values.entry(into).or_insert(0) += 1;
+        }
+    };
+
+    merges(Intent::Leaf, Intent::Growth, Intent::AbsorbAir, 25);
+}
+
+fn check_intent(substance: &Substance, intent: Intent) -> i32 {
+    *substance.values.get(&intent).unwrap_or(&0)
+}
+
+fn has_intent(substance: &Substance, intent: Intent) -> bool {
+    0 < *substance.values.get(&intent).unwrap_or(&0)
+}
+
+fn modify_intent(substance: &mut Substance, intent: Intent, delta: i32) {
+    let value: &mut i32 = substance.values.entry(intent).or_insert(0);
+    *value += delta;
+    if *value < 0 {
+        *value = 0;
+    }
+}
+
+fn fragment_pure(substance: &Substance, fragment_mass: i32) -> (Substance, Substance) {
+    let original_mass = substance.mass;
+    assert!(0 < fragment_mass);
+    assert!(original_mass > fragment_mass);
+
+    let mut remainder = Substance::default();
+    remainder.mass = original_mass - fragment_mass;
+
+    let mut fragment = Substance::default();
+    fragment.mass = fragment_mass;
+
+    for (intent, &original) in &substance.values {
+        let mut delta = original * fragment_mass / original_mass;
+        if original > 2 {
+            delta = std::cmp::max(1, delta);
+            delta = std::cmp::min(original - 1, delta);
+        }
+        if delta > 0 {
+            fragment.values.insert(intent.clone(), delta);
+            let rem = original - delta;
+            if rem > 0 {
+                remainder.values.insert(intent.clone(), rem);
+            }
+        } else {
+            remainder.values.insert(intent.clone(), original);
+        }
+    }
+
+    (remainder, fragment)
+}
+
+fn fragment(substance: &mut Substance, fragment_mass: i32) -> Substance {
+    let original_mass = substance.mass;
+    assert!(0 < fragment_mass);
+    assert!(original_mass > fragment_mass);
+    substance.mass -= fragment_mass;
+
+    let mut new_substance = Substance::default();
+    new_substance.mass = fragment_mass;
+
+    for (intent, value) in &mut substance.values {
+        let original = *value;
+        let mut delta = original * fragment_mass / original_mass;
+        if original > 2 {
+            delta = std::cmp::max(1, delta);
+            delta = std::cmp::min(original - 1, delta);
+        }
+        if delta > 0 {
+            new_substance.values.insert(intent.clone(), delta);
+            *value -= delta;
+        }
+    }
+
+    new_substance
+}
+
+fn substance_add(substance: &mut Substance, add: Substance) {
+    substance.mass += add.mass;
+    for (intent, value) in add.values {
+        *substance.values.entry(intent).or_insert(0) += value;
+    }
 }
 
 // TODO eventually rules for interactions should be categorized and driven by
@@ -119,11 +212,33 @@ fn interaction(
     b: &mut Substance,
     out: Option<&mut Substance>,
 ) {
-    // if interaction_type == Internal {
-    //     if ... {
-
-    //     }
-    // }
+    fn min_of_three<T: Ord>(a: T, b: T, c: T) -> T {
+        std::cmp::min(std::cmp::min(a, b), c)
+    }
+    if interaction_type == InteractionType::Contact {
+        if let Some(out) = out {
+            if has_intent(a, Intent::AbsorbAir) && has_intent(b, Intent::Air) && 1 < b.mass {
+                let delta = min_of_three(
+                    check_intent(a, Intent::AbsorbAir),
+                    check_intent(b, Intent::Air),
+                    b.mass - 1,
+                );
+                modify_intent(a, Intent::AbsorbAir, -delta);
+                modify_intent(b, Intent::Air, -delta);
+                substance_add(out, fragment(b, delta));
+            }
+            if has_intent(b, Intent::AbsorbAir) && has_intent(a, Intent::Air) && 1 < a.mass {
+                let delta = min_of_three(
+                    check_intent(b, Intent::AbsorbAir),
+                    check_intent(a, Intent::Air),
+                    a.mass - 1,
+                );
+                modify_intent(b, Intent::AbsorbAir, -delta);
+                modify_intent(a, Intent::Air, -delta);
+                substance_add(out, fragment(a, delta));
+            }
+        }
+    }
 }
 
 // // A tool that may or may not have some foreign substance on it.
@@ -181,34 +296,62 @@ mod tests {
         s.values.insert(Intent::Plant, 10000);
         internal_interaction(&mut s);
         assert_eq!(*s.values.get(&Intent::Plant).unwrap(), 9931);
-        assert_eq!(*s.values.get(&Intent::Leaf).unwrap(), 50);
-        // Not 20 because of ordering. I may fix this in the future -- TBD.
-        assert_eq!(*s.values.get(&Intent::Growth).unwrap(), 19);
-
-        // Do nothing at limit
-        let mut s = Substance::default();
-        s.values.insert(Intent::Plant, 1000);
-        s.values.insert(Intent::Leaf, 50);
-        s.values.insert(Intent::Growth, 20);
-        internal_interaction(&mut s);
-        assert_eq!(*s.values.get(&Intent::Plant).unwrap(), 1000);
-        assert_eq!(*s.values.get(&Intent::Leaf).unwrap(), 50);
-        assert_eq!(*s.values.get(&Intent::Growth).unwrap(), 20);
+        assert_eq!(*s.values.get(&Intent::Leaf).unwrap(), 49);
+        assert_eq!(*s.values.get(&Intent::Growth).unwrap(), 18);
+        assert_eq!(*s.values.get(&Intent::AbsorbAir).unwrap(), 1);
 
         // Do nothing over limit
         let mut s = Substance::default();
         s.values.insert(Intent::Plant, 100);
         s.values.insert(Intent::Leaf, 100);
         s.values.insert(Intent::Growth, 100);
+        s.values.insert(Intent::AbsorbAir, 100);
         internal_interaction(&mut s);
         assert_eq!(*s.values.get(&Intent::Plant).unwrap(), 100);
         assert_eq!(*s.values.get(&Intent::Leaf).unwrap(), 100);
         assert_eq!(*s.values.get(&Intent::Growth).unwrap(), 100);
+        assert_eq!(*s.values.get(&Intent::AbsorbAir).unwrap(), 100);
     }
 
     #[test]
-    fn generates_leaf_and_growth_from_plant() {}
+    fn interaction_test() {
+        let mut a = Substance::default();
+        a.values.insert(Intent::AbsorbAir, 10);
+        a.mass = 10;
+        let mut b = Substance::default();
+        b.values.insert(Intent::Air, 10);
+        b.mass = 10;
+        let mut out = Substance::default();
 
-    #[test]
-    fn internal_interaction_at_target() {}
+        interaction(InteractionType::Contact, &mut a, &mut b, Some(&mut out));
+        assert_eq!(out.mass, 9);
+        assert_eq!(check_intent(&a, Intent::AbsorbAir), 1);
+        assert_eq!(check_intent(&b, Intent::Air), 1);
+
+        // No out -> no effect
+        let mut a = Substance::default();
+        a.values.insert(Intent::AbsorbAir, 10);
+        a.mass = 10;
+        let mut c = Substance::default();
+        c.values.insert(Intent::Air, 10);
+        c.mass = 10;
+        interaction(InteractionType::Contact, &mut a, &mut c, None);
+        assert_eq!(c.mass, 10);
+
+        // Wrong type -> no effect
+        let mut d = Substance::default();
+        d.values.insert(Intent::AbsorbAir, 10);
+        d.mass = 10;
+        let mut e = Substance::default();
+        e.values.insert(Intent::Air, 10);
+        e.mass = 10;
+        interaction(
+            InteractionType::Internal,
+            &mut d,
+            &mut e,
+            Some(&mut Substance::default()),
+        );
+        assert_eq!(d.mass, 10);
+        assert_eq!(e.mass, 10);
+    }
 }

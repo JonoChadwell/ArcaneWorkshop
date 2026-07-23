@@ -133,8 +133,8 @@ Leaf Plant Stem:
    - Must maintain homeostasis around two quantities:
      - Keep Growth intent relatively constant
      - Keep Plant intent capped (when fed by a leaf)
-   - Plant intent generates some leaf intent
-   - Plant intent generates some growth intent
+   - Plant intent becomes some leaf intent
+   - Plant intent becomes some growth intent
    - Leaf + Growth intent produces AbsorbAir intent.
 
  - If and only if a leaf is missing, the spirit interacts stem + air to create a leaf. Absorbed mass goes into the leaf. All growth intent is pushed into the leaf.
