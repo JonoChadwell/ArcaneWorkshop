@@ -1,8 +1,7 @@
-use bitflags::bitflags;
 use std::collections::HashMap;
 
 #[derive(Clone, Hash, Eq, PartialEq)]
-enum InteractionType {
+pub(crate) enum InteractionType {
     Internal,
     Contact,
     Life,
@@ -73,8 +72,8 @@ enum InteractionType {
 //  - If no leaf (child entity), push intent leaf into air to create one
 // LeafPlantLeaf Spirit
 
-#[derive(Clone, Hash, Eq, PartialEq)]
-enum Intent {
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+pub(crate) enum Intent {
     Air,
     Plant,
     Leaf,
@@ -83,17 +82,45 @@ enum Intent {
 }
 
 #[derive(Default)]
-struct Substance {
-    mass: i32,
-    values: HashMap<Intent, i32>,
+pub(crate) struct Substance {
+    pub(crate) mass: i32,
+    pub(crate) values: HashMap<Intent, i32>,
 }
 
-fn push_intent(intent: Intent, from: &mut Substance, to: &mut Substance) {
+pub(crate) fn check_intent(substance: &Substance, intent: Intent) -> i32 {
+    *substance.values.get(&intent).unwrap_or(&0)
+}
+
+pub(crate) fn has_intent(substance: &Substance, intent: Intent) -> bool {
+    0 < *substance.values.get(&intent).unwrap_or(&0)
+}
+
+pub(crate) fn modify_intent(substance: &mut Substance, intent: Intent, delta: i32) {
+    let value: &mut i32 = substance.values.entry(intent).or_insert(0);
+    *value += delta;
+    if *value < 0 {
+        *value = 0;
+    }
+}
+
+pub(crate) fn set_intent(substance: &mut Substance, intent: Intent, value: i32) {
+    substance.values.insert(intent, value);
+}
+
+
+pub(crate) fn push_intent(intent: Intent, from: &mut Substance, to: &mut Substance) {
     let amount = from.values.insert(intent.clone(), 0).unwrap_or(0);
     *to.values.entry(intent).or_insert(0) += amount;
 }
 
-fn internal_interaction(substance: &mut Substance) {
+pub(crate) fn balance_intent(intent: Intent, a: &mut Substance, b: &mut Substance) {
+    let total = check_intent(a, intent) + check_intent(b, intent);
+    let new_a_val = total / 2;
+    set_intent(a, intent, new_a_val);
+    set_intent(b, intent, total - new_a_val);
+}
+
+pub(crate) fn internal_interaction(substance: &mut Substance) {
     let mut becomes = |source: Intent, intent: Intent, percent: i32| {
         if let Some(&val) = substance.values.get(&source) {
             let target = (val * percent) / 100;
@@ -117,27 +144,12 @@ fn internal_interaction(substance: &mut Substance) {
         if into_val < target {
             *substance.values.entry(a).or_insert(1) -= 1;
             *substance.values.entry(b).or_insert(1) -= 1;
-            *substance.values.entry(into).or_insert(0) += 1;
+            *substance.values.entry(into).or_insert(0) += 2;
         }
     };
 
-    merges(Intent::Leaf, Intent::Growth, Intent::AbsorbAir, 25);
-}
-
-fn check_intent(substance: &Substance, intent: Intent) -> i32 {
-    *substance.values.get(&intent).unwrap_or(&0)
-}
-
-fn has_intent(substance: &Substance, intent: Intent) -> bool {
-    0 < *substance.values.get(&intent).unwrap_or(&0)
-}
-
-fn modify_intent(substance: &mut Substance, intent: Intent, delta: i32) {
-    let value: &mut i32 = substance.values.entry(intent).or_insert(0);
-    *value += delta;
-    if *value < 0 {
-        *value = 0;
-    }
+    merges(Intent::Leaf, Intent::Growth, Intent::AbsorbAir, 90);
+    merges(Intent::Leaf, Intent::Air, Intent::Plant, 50);
 }
 
 fn fragment_pure(substance: &Substance, fragment_mass: i32) -> (Substance, Substance) {
@@ -171,7 +183,7 @@ fn fragment_pure(substance: &Substance, fragment_mass: i32) -> (Substance, Subst
     (remainder, fragment)
 }
 
-fn fragment(substance: &mut Substance, fragment_mass: i32) -> Substance {
+pub(crate) fn fragment(substance: &mut Substance, fragment_mass: i32) -> Substance {
     let original_mass = substance.mass;
     assert!(0 < fragment_mass);
     assert!(original_mass > fragment_mass);
@@ -196,7 +208,7 @@ fn fragment(substance: &mut Substance, fragment_mass: i32) -> Substance {
     new_substance
 }
 
-fn substance_add(substance: &mut Substance, add: Substance) {
+pub(crate) fn substance_add(substance: &mut Substance, add: Substance) {
     substance.mass += add.mass;
     for (intent, value) in add.values {
         *substance.values.entry(intent).or_insert(0) += value;
@@ -206,7 +218,7 @@ fn substance_add(substance: &mut Substance, add: Substance) {
 // TODO eventually rules for interactions should be categorized and driven by
 // categories (for example there will be many interactions that work like plant
 // => leaf with a fixed % transformation target).
-fn interaction(
+pub(crate) fn interaction(
     interaction_type: InteractionType,
     a: &mut Substance,
     b: &mut Substance,
@@ -236,6 +248,27 @@ fn interaction(
                 modify_intent(b, Intent::AbsorbAir, -delta);
                 modify_intent(a, Intent::Air, -delta);
                 substance_add(out, fragment(a, delta));
+            }
+        }
+        let a_leaf = check_intent(a, Intent::Leaf);
+        let b_leaf = check_intent(b, Intent::Leaf);
+        let a_air = check_intent(a, Intent::Air);
+        let b_air = check_intent(b, Intent::Air);
+        const LEAF_GATHER_PERCENT: i32 = 100;
+        if 0 < a_leaf && 0 < b_air {
+            let target = std::cmp::min(a_leaf, b_air) * LEAF_GATHER_PERCENT / 100;
+            let delta = target - a_air;
+            if 0 < delta {
+                modify_intent(b, Intent::Air, -delta);
+                modify_intent(a, Intent::Air, delta);
+            }
+        }
+        if 0 < b_leaf && 0 < a_air {
+            let target = std::cmp::min(b_leaf, a_air) * LEAF_GATHER_PERCENT / 100;
+            let delta = target - b_air;
+            if 0 < delta {
+                modify_intent(a, Intent::Air, -delta);
+                modify_intent(b, Intent::Air, delta);
             }
         }
     }

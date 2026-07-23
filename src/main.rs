@@ -1,9 +1,9 @@
+use alchemy::*;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 use std::f32::consts::PI;
 mod alchemy;
-// use alchemy::Conflicts;
 
 #[derive(Resource)]
 struct PlayerSettings {
@@ -44,6 +44,34 @@ struct InteractionProgressText;
 #[derive(Component)]
 struct InteractionProgressBar;
 
+#[derive(Component)]
+struct Stem {
+    substance: Substance,
+    leaf: Option<Entity>,
+}
+
+#[derive(Component)]
+struct Leaf {
+    substance: Substance,
+}
+
+#[derive(Resource)]
+struct GlobalAir {
+    substance: Substance,
+}
+
+#[derive(Resource, Default)]
+struct LeafAssets {
+    mesh: Handle<Mesh>,
+    material: Handle<StandardMaterial>,
+}
+
+#[derive(Resource)]
+struct StatsTimer(Timer);
+
+#[derive(Resource)]
+struct StemUpdateTimer(Timer);
+
 impl Default for PlayerSettings {
     fn default() -> Self {
         Self {
@@ -61,9 +89,21 @@ impl Default for PlayerSettings {
 fn main() {
     App::new()
         .insert_resource(PlayerSettings::default())
+        .insert_resource(GlobalAir {
+            substance: Substance {
+                mass: 100000,
+                values: [(Intent::Air, 500000)].into_iter().collect(),
+            },
+        })
+        .init_resource::<LeafAssets>()
+        .insert_resource(StatsTimer(Timer::from_seconds(1.0, TimerMode::Repeating)))
+        .insert_resource(StemUpdateTimer(Timer::from_seconds(0.2, TimerMode::Repeating)))
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, setup)
-        .add_systems(Update, (move_camera, cursor_interaction).chain())
+        .add_systems(
+            Update,
+            (stem_system, print_stats, move_camera, cursor_interaction).chain(),
+        )
         .add_observer(update_interaction_progress_widget)
         .run();
 }
@@ -73,6 +113,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut leaf_assets: ResMut<LeafAssets>,
 ) {
     // circular base
     commands.spawn((
@@ -80,35 +121,27 @@ fn setup(
         MeshMaterial3d(materials.add(Color::WHITE)),
         Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
     ));
-    // cube
+
+    // leaf mesh and material (reused when spawning leaves)
+    leaf_assets.mesh = meshes.add(Cuboid::new(0.8, 0.05, 0.4));
+    leaf_assets.material = materials.add(Color::srgb_u8(34, 177, 76));
+
+    // stem — brown pillar
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, 1.5, 0.0),
-        CursorInteraction {
-            radius: 0.7,
-            progress: 0.0,
+        Stem {
+            substance: Substance {
+                mass: 100,
+                values: [(Intent::Plant, 100), (Intent::Leaf, 5), (Intent::Growth, 2)].into_iter().collect(),
+            },
+            leaf: None,
         },
-    ));
-    // cube 2
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, 1.5, 2.0),
-        CursorInteraction {
-            radius: 0.7,
-            progress: 0.0,
-        },
-    ));
-    // cube 3
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(2.0, 1.5, 0.0),
-        CursorInteraction {
-            radius: 0.7,
-            progress: 0.0,
-        },
+        Mesh3d(meshes.add(Cuboid::new(0.3, 1.0, 0.3))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(101, 67, 33))),
+        Transform::from_xyz(0.0, 0.5, 0.0),
+        // CursorInteraction {
+        //     radius: 0.7,
+        //     progress: 0.0,
+        // },
     ));
     // light
     commands.spawn((
@@ -164,6 +197,102 @@ fn setup(
             ]
         )],
     ));
+}
+
+fn stem_system(
+    time: Res<Time>,
+    mut timer: ResMut<StemUpdateTimer>,
+    mut stems: Query<(Entity, &mut Stem)>,
+    mut leaves: Query<&mut Leaf>,
+    mut air: ResMut<GlobalAir>,
+    mut commands: Commands,
+    leaf_assets: Res<LeafAssets>,
+) {
+    if !timer.0.tick(time.delta()).just_finished() {
+        return;
+    }
+    for (_entity, mut stem) in stems.iter_mut() {
+        internal_interaction(&mut stem.substance);
+
+        if let Some(leaf_entity) = stem.leaf {
+            if !leaves.contains(leaf_entity) {
+                stem.leaf = None;
+                continue;
+            }
+            let Ok(mut leaf) = leaves.get_mut(leaf_entity) else { continue };
+
+            let mut temp = Substance::default();
+            interaction(
+                InteractionType::Contact,
+                &mut leaf.substance,
+                &mut air.substance,
+                Some(&mut temp),
+            );
+            substance_add(&mut leaf.substance, temp);
+
+            push_intent(Intent::Plant, &mut leaf.substance, &mut stem.substance);
+            balance_intent(Intent::Leaf, &mut stem.substance, &mut leaf.substance);
+            internal_interaction(&mut leaf.substance);
+
+        } else {
+            let mut leaf_substance = Substance::default();
+            interaction(
+                InteractionType::Contact,
+                &mut stem.substance,
+                &mut air.substance,
+                Some(&mut leaf_substance),
+            );
+            if leaf_substance.mass <= 0 {
+                continue;
+            }
+            push_intent(Intent::Air, &mut stem.substance, &mut leaf_substance);
+            push_intent(Intent::Growth, &mut stem.substance, &mut leaf_substance);
+
+            let leaf_entity = commands
+                .spawn((
+                    Leaf {
+                        substance: leaf_substance,
+                    },
+                    Mesh3d(leaf_assets.mesh.clone()),
+                    MeshMaterial3d(leaf_assets.material.clone()),
+                    Transform::from_xyz(0.0, 1.0, 0.0),
+                    CursorInteraction {
+                        radius: 0.7,
+                        progress: 0.0,
+                    },
+                ))
+                .id();
+            stem.leaf = Some(leaf_entity);
+        }
+    }
+}
+
+fn print_stats(
+    time: Res<Time>,
+    mut timer: ResMut<StatsTimer>,
+    stems: Query<&Stem>,
+    leaves: Query<&Leaf>,
+    air: Res<GlobalAir>,
+) {
+    if !timer.0.tick(time.delta()).just_finished() {
+        return;
+    }
+    println!("--- Air ---  mass: {}", air.substance.mass);
+    for (intent, val) in &air.substance.values {
+        println!("  {:?}: {}", intent, val);
+    }
+    for stem in stems.iter() {
+        println!("--- Stem ---  mass: {}", stem.substance.mass);
+        for (intent, val) in &stem.substance.values {
+            println!("  {:?}: {}", intent, val);
+        }
+    }
+    for leaf in leaves.iter() {
+        println!("--- Leaf ---  mass: {}", leaf.substance.mass);
+        for (intent, val) in &leaf.substance.values {
+            println!("  {:?}: {}", intent, val);
+        }
+    }
 }
 
 fn move_camera(
@@ -249,10 +378,12 @@ fn cursor_interaction(
     time: Res<Time>,
     window: Single<&mut Window, With<PrimaryWindow>>,
     mut interactables: Query<(Entity, &GlobalTransform, &mut CursorInteraction)>,
+    leaves: Query<&Leaf>,
+    mut stems: Query<&mut Stem>,
     // mut text: Single<&mut Text, With<MinDistText>>,
     mut commands: Commands,
 ) {
-    const ACTIVATION_TIME: f32 = 2.0;
+    const ACTIVATION_TIME: f32 = 0.5;
     const MAX_DISTANCE: f32 = 6.0;
     let Some(cursor_pos) = window.cursor_position() else {
         return;
@@ -281,6 +412,15 @@ fn cursor_interaction(
             if e == entity {
                 if mouse.pressed(MouseButton::Left) {
                     interaction.progress += (1.0 / ACTIVATION_TIME) * time.delta_secs();
+                    if interaction.progress >= 1.0 && leaves.contains(e) {
+                        for mut stem in stems.iter_mut() {
+                            if stem.leaf == Some(e) {
+                                stem.leaf = None;
+                            }
+                        }
+                        commands.entity(e).despawn();
+                        return;
+                    }
                 } else {
                     interaction.progress = 0.0;
                 }
