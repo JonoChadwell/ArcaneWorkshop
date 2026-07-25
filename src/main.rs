@@ -131,7 +131,7 @@ fn setup(
         Stem {
             substance: Substance {
                 mass: 100,
-                values: [(Intent::Plant, 100), (Intent::Leaf, 5), (Intent::Growth, 2)].into_iter().collect(),
+                values: [(Intent::Plant, 1000), (Intent::Leaf, 50), (Intent::Growth, 20)].into_iter().collect(),
             },
             leaf: None,
         },

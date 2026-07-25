@@ -36,7 +36,6 @@ Tools:
    - Dig up dirt or plants
  - Butcher's Knife
    - Process animals from pens
- - 
 
 
 Mechanics of Traces:
@@ -141,17 +140,19 @@ Leaf Plant Stem:
 
 Leaf Plant Leaf
  - Spirit causes a contact interaction between the leaf and the air
-   - Leaf intent + Air intent creates Plant intent
+   - Leaf intent absorbs Air intent.
    - AbsorbAir intent + Air intent adds substance to the leaf
  - Spirit pushes plant intent to stem, and pulls leaf intent from the stem.
  - "Internal" interaction
+   - Leaf intent + Air intent produces Plant intent
    - Leaf intent + Growth intent produces AbsorbAir intent
-   - Leaf intent decays
-   - Growth intent decays
 
+How to prevent the plant from growing forever?
+ - The size of the leaf plant stem is fixed at spawn time and does not change.
+   - It takes mass from the air to make the leaf.
+ - The eventual mass of the leaf plant leaf is fixed at spawn.
+   - It is given a fixed amount of Growth Intent at spawn and cannot replenish it.
 
-
-How to limit the size of a leaf to 10 grams:
-1. Spirit fiat -- growing is a special interaction that the spirit stops triggering.
-2. Make it shrink at some rate that causes it to converge to 10
-* 3. Build some intent mechanism into the leaf that smothers the reaction by which it grows.
+How to prevent the plant's Intent from growing forever?
+ - Option 1: static growth + linear decay
+   - Decay of what? Is Intent conserved?

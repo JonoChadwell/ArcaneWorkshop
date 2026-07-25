@@ -136,6 +136,16 @@ pub(crate) fn internal_interaction(substance: &mut Substance) {
     becomes(Intent::Plant, Intent::Leaf, 5);
     becomes(Intent::Plant, Intent::Growth, 2);
 
+    let mut merge_one = |a: Intent, b: Intent, into: Intent| {
+        if has_intent(substance, a) && has_intent(substance, b) {
+            modify_intent(substance, a, -1);
+            modify_intent(substance, b, -1);
+            modify_intent(substance, into, 2);
+        }
+    };
+
+    merge_one(Intent::Leaf, Intent::Air, Intent::Plant);
+
     let mut merges = |a: Intent, b: Intent, into: Intent, percent: i32| {
         let a_val = *substance.values.get(&a).unwrap_or(&0);
         let b_val = *substance.values.get(&b).unwrap_or(&0);
@@ -144,12 +154,11 @@ pub(crate) fn internal_interaction(substance: &mut Substance) {
         if into_val < target {
             *substance.values.entry(a).or_insert(1) -= 1;
             *substance.values.entry(b).or_insert(1) -= 1;
-            *substance.values.entry(into).or_insert(0) += 2;
+            *substance.values.entry(into).or_insert(0) += 1;
         }
     };
 
     merges(Intent::Leaf, Intent::Growth, Intent::AbsorbAir, 90);
-    merges(Intent::Leaf, Intent::Air, Intent::Plant, 50);
 }
 
 fn fragment_pure(substance: &Substance, fragment_mass: i32) -> (Substance, Substance) {
