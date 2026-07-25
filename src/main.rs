@@ -232,8 +232,8 @@ fn stem_system(
             );
             substance_add(&mut leaf.substance, temp);
 
-            push_intent(Intent::Plant, &mut leaf.substance, &mut stem.substance);
-            balance_intent(Intent::Leaf, &mut stem.substance, &mut leaf.substance);
+            leaf.substance.push(Intent::Plant, &mut stem.substance);
+            stem.substance.balance(Intent::Leaf, &mut leaf.substance);
             internal_interaction(&mut leaf.substance);
         } else {
             let mut leaf_substance = Substance::default();
@@ -246,8 +246,8 @@ fn stem_system(
             if leaf_substance.mass <= 0 {
                 continue;
             }
-            push_intent(Intent::Air, &mut stem.substance, &mut leaf_substance);
-            push_intent(Intent::Growth, &mut stem.substance, &mut leaf_substance);
+            stem.substance.push(Intent::Air, &mut leaf_substance);
+            stem.substance.push(Intent::Growth, &mut leaf_substance);
 
             let leaf_entity = commands
                 .spawn((

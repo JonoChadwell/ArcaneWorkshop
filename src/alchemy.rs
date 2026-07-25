@@ -155,9 +155,9 @@ impl Substance {
 
     pub fn modify(&mut self, intent: Intent, delta: i32) {
         if delta < 0 {
-            self.add(intent, delta);
-        } else {
             self.sub(intent, -delta);
+        } else {
+            self.add(intent, delta);
         }
     }
 
@@ -189,7 +189,6 @@ impl Substance {
         self.set(intent, total_val - other_val);
         other.set(intent, other_val);
     }
-
 }
 
 pub fn internal_interaction(substance: &mut Substance) {
@@ -307,46 +306,46 @@ pub fn interaction(
     }
     if interaction_type == InteractionType::Contact {
         if let Some(out) = out {
-            if has_intent(a, Intent::AbsorbAir) && has_intent(b, Intent::Air) && 1 < b.mass {
+            if a.has(Intent::AbsorbAir) && b.has(Intent::Air) && 1 < b.mass {
                 let delta = min_of_three(
-                    check_intent(a, Intent::AbsorbAir),
-                    check_intent(b, Intent::Air),
+                    a[Intent::AbsorbAir],
+                    b[Intent::Air],
                     b.mass - 1,
                 );
-                modify_intent(a, Intent::AbsorbAir, -delta);
-                modify_intent(b, Intent::Air, -delta);
+                a.sub(Intent::AbsorbAir, delta);
+                b.sub(Intent::Air, delta);
                 substance_add(out, fragment(b, delta));
             }
-            if has_intent(b, Intent::AbsorbAir) && has_intent(a, Intent::Air) && 1 < a.mass {
+            if b.has(Intent::AbsorbAir) && a.has(Intent::Air) && 1 < a.mass {
                 let delta = min_of_three(
-                    check_intent(b, Intent::AbsorbAir),
-                    check_intent(a, Intent::Air),
+                    b[Intent::AbsorbAir],
+                    a[Intent::Air],
                     a.mass - 1,
                 );
-                modify_intent(b, Intent::AbsorbAir, -delta);
-                modify_intent(a, Intent::Air, -delta);
+                b.sub(Intent::AbsorbAir, delta);
+                a.sub(Intent::Air, delta);
                 substance_add(out, fragment(a, delta));
             }
         }
-        let a_leaf = check_intent(a, Intent::Leaf);
-        let b_leaf = check_intent(b, Intent::Leaf);
-        let a_air = check_intent(a, Intent::Air);
-        let b_air = check_intent(b, Intent::Air);
+        let a_leaf = a[Intent::Leaf];
+        let b_leaf = b[Intent::Leaf];
+        let a_air = a[Intent::Air];
+        let b_air = b[Intent::Air];
         const LEAF_GATHER_PERCENT: i32 = 100;
         if 0 < a_leaf && 0 < b_air {
             let target = std::cmp::min(a_leaf, b_air) * LEAF_GATHER_PERCENT / 100;
             let delta = target - a_air;
             if 0 < delta {
-                modify_intent(b, Intent::Air, -delta);
-                modify_intent(a, Intent::Air, delta);
+                b.sub(Intent::Air, delta);
+                a.add(Intent::Air, delta);
             }
         }
         if 0 < b_leaf && 0 < a_air {
             let target = std::cmp::min(b_leaf, a_air) * LEAF_GATHER_PERCENT / 100;
             let delta = target - b_air;
             if 0 < delta {
-                modify_intent(a, Intent::Air, -delta);
-                modify_intent(b, Intent::Air, delta);
+                a.sub(Intent::Air, delta);
+                b.add(Intent::Air, delta);
             }
         }
     }
@@ -436,8 +435,8 @@ mod tests {
 
         interaction(InteractionType::Contact, &mut a, &mut b, Some(&mut out));
         assert_eq!(out.mass, 9);
-        assert_eq!(check_intent(&a, Intent::AbsorbAir), 1);
-        assert_eq!(check_intent(&b, Intent::Air), 1);
+        assert_eq!(a[Intent::AbsorbAir], 1);
+        assert_eq!(b[Intent::Air], 1);
 
         // No out -> no effect
         let mut a = Substance::default();
