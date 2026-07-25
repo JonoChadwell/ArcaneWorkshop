@@ -82,6 +82,8 @@ pub enum Intent {
     AbsorbAir,
 }
 
+use self::Intent::*;
+
 #[derive(Default)]
 pub struct Substance {
     pub mass: i32,
@@ -204,8 +206,8 @@ pub fn internal_interaction(substance: &mut Substance) {
         }
     };
 
-    becomes(Intent::Plant, Intent::Leaf, 5, 10);
-    becomes(Intent::Plant, Intent::Growth, 2, 10);
+    becomes(Plant, Leaf, 5, 10);
+    becomes(Plant, Growth, 2, 10);
 
     let mut merge_one = |a: Intent, b: Intent, into: Intent| {
         if substance.has(a) && substance.has(b) {
@@ -215,7 +217,7 @@ pub fn internal_interaction(substance: &mut Substance) {
         }
     };
 
-    merge_one(Intent::Leaf, Intent::Air, Intent::Plant);
+    merge_one(Leaf, Air, Plant);
 
     let mut merges = |a: Intent, b: Intent, into: Intent, percent: i32| {
         let target = (std::cmp::min(substance[a], substance[b]) * percent) / 100;
@@ -226,7 +228,7 @@ pub fn internal_interaction(substance: &mut Substance) {
         }
     };
 
-    merges(Intent::Leaf, Intent::Growth, Intent::AbsorbAir, 90);
+    merges(Leaf, Growth, AbsorbAir, 90);
 }
 
 fn fragment_pure(substance: &Substance, fragment_mass: i32) -> (Substance, Substance) {
@@ -306,46 +308,46 @@ pub fn interaction(
     }
     if interaction_type == InteractionType::Contact {
         if let Some(out) = out {
-            if a.has(Intent::AbsorbAir) && b.has(Intent::Air) && 1 < b.mass {
+            if a.has(AbsorbAir) && b.has(Air) && 1 < b.mass {
                 let delta = min_of_three(
-                    a[Intent::AbsorbAir],
-                    b[Intent::Air],
+                    a[AbsorbAir],
+                    b[Air],
                     b.mass - 1,
                 );
-                a.sub(Intent::AbsorbAir, delta);
-                b.sub(Intent::Air, delta);
+                a.sub(AbsorbAir, delta);
+                b.sub(Air, delta);
                 substance_add(out, fragment(b, delta));
             }
-            if b.has(Intent::AbsorbAir) && a.has(Intent::Air) && 1 < a.mass {
+            if b.has(AbsorbAir) && a.has(Air) && 1 < a.mass {
                 let delta = min_of_three(
-                    b[Intent::AbsorbAir],
-                    a[Intent::Air],
+                    b[AbsorbAir],
+                    a[Air],
                     a.mass - 1,
                 );
-                b.sub(Intent::AbsorbAir, delta);
-                a.sub(Intent::Air, delta);
+                b.sub(AbsorbAir, delta);
+                a.sub(Air, delta);
                 substance_add(out, fragment(a, delta));
             }
         }
-        let a_leaf = a[Intent::Leaf];
-        let b_leaf = b[Intent::Leaf];
-        let a_air = a[Intent::Air];
-        let b_air = b[Intent::Air];
+        let a_leaf = a[Leaf];
+        let b_leaf = b[Leaf];
+        let a_air = a[Air];
+        let b_air = b[Air];
         const LEAF_GATHER_PERCENT: i32 = 100;
         if 0 < a_leaf && 0 < b_air {
             let target = std::cmp::min(a_leaf, b_air) * LEAF_GATHER_PERCENT / 100;
             let delta = target - a_air;
             if 0 < delta {
-                b.sub(Intent::Air, delta);
-                a.add(Intent::Air, delta);
+                b.sub(Air, delta);
+                a.add(Air, delta);
             }
         }
         if 0 < b_leaf && 0 < a_air {
             let target = std::cmp::min(b_leaf, a_air) * LEAF_GATHER_PERCENT / 100;
             let delta = target - b_air;
             if 0 < delta {
-                a.sub(Intent::Air, delta);
-                b.add(Intent::Air, delta);
+                a.sub(Air, delta);
+                b.add(Air, delta);
             }
         }
     }
@@ -399,61 +401,61 @@ mod tests {
         // Does nothing when empty
         let mut s = Substance::default();
         internal_interaction(&mut s);
-        assert_eq!(s.values.get(&Intent::Leaf), None);
-        assert_eq!(s.values.get(&Intent::Growth), None);
+        assert_eq!(s.values.get(&Leaf), None);
+        assert_eq!(s.values.get(&Growth), None);
 
         // Check generators
-        s.values.insert(Intent::Plant, 10000);
+        s.values.insert(Plant, 10000);
         internal_interaction(&mut s);
-        assert_eq!(*s.values.get(&Intent::Plant).unwrap(), 9931);
-        assert_eq!(*s.values.get(&Intent::Leaf).unwrap(), 49);
-        assert_eq!(*s.values.get(&Intent::Growth).unwrap(), 18);
-        assert_eq!(*s.values.get(&Intent::AbsorbAir).unwrap(), 1);
+        assert_eq!(*s.values.get(&Plant).unwrap(), 9931);
+        assert_eq!(*s.values.get(&Leaf).unwrap(), 49);
+        assert_eq!(*s.values.get(&Growth).unwrap(), 18);
+        assert_eq!(*s.values.get(&AbsorbAir).unwrap(), 1);
 
         // Do nothing over limit
         let mut s = Substance::default();
-        s.values.insert(Intent::Plant, 100);
-        s.values.insert(Intent::Leaf, 100);
-        s.values.insert(Intent::Growth, 100);
-        s.values.insert(Intent::AbsorbAir, 100);
+        s.values.insert(Plant, 100);
+        s.values.insert(Leaf, 100);
+        s.values.insert(Growth, 100);
+        s.values.insert(AbsorbAir, 100);
         internal_interaction(&mut s);
-        assert_eq!(*s.values.get(&Intent::Plant).unwrap(), 100);
-        assert_eq!(*s.values.get(&Intent::Leaf).unwrap(), 100);
-        assert_eq!(*s.values.get(&Intent::Growth).unwrap(), 100);
-        assert_eq!(*s.values.get(&Intent::AbsorbAir).unwrap(), 100);
+        assert_eq!(*s.values.get(&Plant).unwrap(), 100);
+        assert_eq!(*s.values.get(&Leaf).unwrap(), 100);
+        assert_eq!(*s.values.get(&Growth).unwrap(), 100);
+        assert_eq!(*s.values.get(&AbsorbAir).unwrap(), 100);
     }
 
     #[test]
     fn interaction_test() {
         let mut a = Substance::default();
-        a.values.insert(Intent::AbsorbAir, 10);
+        a.values.insert(AbsorbAir, 10);
         a.mass = 10;
         let mut b = Substance::default();
-        b.values.insert(Intent::Air, 10);
+        b.values.insert(Air, 10);
         b.mass = 10;
         let mut out = Substance::default();
 
         interaction(InteractionType::Contact, &mut a, &mut b, Some(&mut out));
         assert_eq!(out.mass, 9);
-        assert_eq!(a[Intent::AbsorbAir], 1);
-        assert_eq!(b[Intent::Air], 1);
+        assert_eq!(a[AbsorbAir], 1);
+        assert_eq!(b[Air], 1);
 
         // No out -> no effect
         let mut a = Substance::default();
-        a.values.insert(Intent::AbsorbAir, 10);
+        a.values.insert(AbsorbAir, 10);
         a.mass = 10;
         let mut c = Substance::default();
-        c.values.insert(Intent::Air, 10);
+        c.values.insert(Air, 10);
         c.mass = 10;
         interaction(InteractionType::Contact, &mut a, &mut c, None);
         assert_eq!(c.mass, 10);
 
         // Wrong type -> no effect
         let mut d = Substance::default();
-        d.values.insert(Intent::AbsorbAir, 10);
+        d.values.insert(AbsorbAir, 10);
         d.mass = 10;
         let mut e = Substance::default();
-        e.values.insert(Intent::Air, 10);
+        e.values.insert(Air, 10);
         e.mass = 10;
         interaction(
             InteractionType::Internal,
@@ -468,15 +470,15 @@ mod tests {
     #[test]
     fn substance_test() {
         let mut a = Substance::new(10)
-            .with(Intent::Leaf, 5)
-            .with(Intent::Air, 25);
-        a.add(Intent::Leaf, 5);
-        assert_eq!(a[Intent::Leaf], 10);
-        a.add(Intent::Air, 15);
-        assert_eq!(a[Intent::Air], 30);
-        a.add(Intent::Air, 5);
-        assert_eq!(a[Intent::Air], 31);
-        a.add(Intent::Air, (4 * 9) + (5 * 5) + 3);
-        assert_eq!(a[Intent::Air], 45);
+            .with(Leaf, 5)
+            .with(Air, 25);
+        a.add(Leaf, 5);
+        assert_eq!(a[Leaf], 10);
+        a.add(Air, 15);
+        assert_eq!(a[Air], 30);
+        a.add(Air, 5);
+        assert_eq!(a[Air], 31);
+        a.add(Air, (4 * 9) + (5 * 5) + 3);
+        assert_eq!(a[Air], 45);
     }
 }
