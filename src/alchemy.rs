@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Index;
 
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub enum InteractionType {
@@ -84,77 +85,145 @@ pub enum Intent {
 #[derive(Default)]
 pub struct Substance {
     pub mass: i32,
-    pub values: HashMap<Intent, i32>,
+    values: HashMap<Intent, i32>,
 }
 
-pub fn check_intent(substance: &Substance, intent: Intent) -> i32 {
-    *substance.values.get(&intent).unwrap_or(&0)
-}
-
-pub fn has_intent(substance: &Substance, intent: Intent) -> bool {
-    0 < *substance.values.get(&intent).unwrap_or(&0)
-}
-
-pub fn modify_intent(substance: &mut Substance, intent: Intent, delta: i32) {
-    let value: &mut i32 = substance.values.entry(intent).or_insert(0);
-    *value += delta;
-    if *value < 0 {
-        *value = 0;
+impl Index<Intent> for Substance {
+    type Output = i32;
+    fn index(&self, intent: Intent) -> &Self::Output {
+        self.values.get(&intent).unwrap_or(&0)
     }
 }
 
-pub fn set_intent(substance: &mut Substance, intent: Intent, value: i32) {
-    substance.values.insert(intent, value);
-}
+impl Substance {
+    pub fn new(mass: i32) -> Self {
+        Self {
+            mass,
+            ..Default::default()
+        }
+    }
 
+    pub fn with(mut self, intent: Intent, amount: i32) -> Self {
+        assert!(!self.values.contains_key(&intent));
+        self.values.insert(intent, amount);
+        self
+    }
 
-pub fn push_intent(intent: Intent, from: &mut Substance, to: &mut Substance) {
-    let amount = from.values.insert(intent.clone(), 0).unwrap_or(0);
-    *to.values.entry(intent).or_insert(0) += amount;
-}
+    pub fn has(&self, intent: Intent) -> bool {
+        self[intent] > 0
+    }
 
-pub fn balance_intent(intent: Intent, a: &mut Substance, b: &mut Substance) {
-    let total = check_intent(a, intent) + check_intent(b, intent);
-    let new_a_val = total / 2;
-    set_intent(a, intent, new_a_val);
-    set_intent(b, intent, total - new_a_val);
+    // Adds intent using mass as a soft-cap. The further you go the more input
+    // is required to step up.
+    pub fn add(&mut self, intent: Intent, amount: i32) {
+        let mass = std::cmp::max(1, self.mass);
+        assert!(0 <= amount);   
+        if amount == 0 {
+            return;
+        }
+        let mut amount = amount;
+        let value = self.values.entry(intent).or_insert(0);
+        while let bracket = (*value) / mass
+            && bracket < amount
+        {
+            let bracket_space = bracket * mass + mass - *value;
+            let to_add = std::cmp::min(amount / (bracket + 1), bracket_space);
+            assert!(0 < to_add);
+            *value += to_add;
+            amount -= to_add * (bracket + 1);
+        }
+        // remainder is lost
+    }
+
+    fn add_flat(&mut self, intent: Intent, amount: i32) {
+        assert!(0 <= amount);
+        if amount == 0 {
+            return;
+        }
+        *self.values.entry(intent).or_insert(0) += amount;
+    }
+
+    pub fn sub(&mut self, intent: Intent, amount: i32) {
+        assert!(0 <= amount);
+        if amount == 0 {
+            return;
+        }
+        let value = self.values.entry(intent).or_insert(0);
+        assert!(amount <= *value);
+        *value -= amount;
+    }
+
+    pub fn modify(&mut self, intent: Intent, delta: i32) {
+        if delta < 0 {
+            self.add(intent, delta);
+        } else {
+            self.sub(intent, -delta);
+        }
+    }
+
+    pub fn print(&self, name: &str) {
+        println!("--- {} ---  mass: {}", name, self.mass);
+        for (intent, val) in &self.values {
+            println!("  {:?}: {}", intent, val);
+        }
+    }
+
+    pub fn clear(&mut self, intent: Intent) -> i32 {
+        self.values.remove(&intent).unwrap_or(0)
+    }
+
+    pub fn push(&mut self, intent: Intent, to: &mut Self) {
+        to.add(intent, self.clear(intent));
+    }
+
+    // Intentionally private. Go through `with` or `add`.
+    fn set(&mut self, intent: Intent, value: i32) {
+        *self.values.entry(intent).or_insert(0) = value;
+    }
+    
+    pub fn balance(&mut self, intent: Intent, other: &mut Substance) {
+        let total_val = self[intent] + other[intent];
+        let total_mass = self.mass + other.mass;
+        // Round towards self.
+        let other_val = total_val * other.mass / total_mass;
+        self.set(intent, total_val - other_val);
+        other.set(intent, other_val);
+    }
+
 }
 
 pub fn internal_interaction(substance: &mut Substance) {
-    let mut becomes = |source: Intent, intent: Intent, percent: i32| {
+    let mut becomes = |source: Intent, dest: Intent, target_percent: i32, speed_percent: i32| {
         if let Some(&val) = substance.values.get(&source) {
-            let target = (val * percent) / 100;
-            let count = *substance.values.get(&intent).unwrap_or(&0);
-            if count < target {
-                let delta = std::cmp::max(1, (target - count) / 10);
-                *substance.values.entry(intent).or_insert(0) += delta;
-                *substance.values.entry(source).or_insert(0) -= delta;
+            let target_val = val * target_percent / 100;
+            let dest_val = substance[dest];
+            if dest_val < target_val {
+                let delta = std::cmp::max(1, (target_val - dest_val) * speed_percent / 100);
+                substance.sub(source, delta);
+                substance.add_flat(dest, delta);
             }
         }
     };
 
-    becomes(Intent::Plant, Intent::Leaf, 5);
-    becomes(Intent::Plant, Intent::Growth, 2);
+    becomes(Intent::Plant, Intent::Leaf, 5, 10);
+    becomes(Intent::Plant, Intent::Growth, 2, 10);
 
     let mut merge_one = |a: Intent, b: Intent, into: Intent| {
-        if has_intent(substance, a) && has_intent(substance, b) {
-            modify_intent(substance, a, -1);
-            modify_intent(substance, b, -1);
-            modify_intent(substance, into, 2);
+        if substance.has(a) && substance.has(b) {
+            substance.sub(a, 1);
+            substance.sub(b, 1);
+            substance.add(into, 2);
         }
     };
 
     merge_one(Intent::Leaf, Intent::Air, Intent::Plant);
 
     let mut merges = |a: Intent, b: Intent, into: Intent, percent: i32| {
-        let a_val = *substance.values.get(&a).unwrap_or(&0);
-        let b_val = *substance.values.get(&b).unwrap_or(&0);
-        let into_val = *substance.values.get(&into).unwrap_or(&0);
-        let target = (std::cmp::min(a_val, b_val) * percent) / 100;
-        if into_val < target {
-            *substance.values.entry(a).or_insert(1) -= 1;
-            *substance.values.entry(b).or_insert(1) -= 1;
-            *substance.values.entry(into).or_insert(0) += 1;
+        let target = (std::cmp::min(substance[a], substance[b]) * percent) / 100;
+        if substance[into] < target {
+            substance.sub(a, 1);
+            substance.sub(b, 1);
+            substance.add(into, 2);
         }
     };
 
@@ -395,5 +464,20 @@ mod tests {
         );
         assert_eq!(d.mass, 10);
         assert_eq!(e.mass, 10);
+    }
+
+    #[test]
+    fn substance_test() {
+        let mut a = Substance::new(10)
+            .with(Intent::Leaf, 5)
+            .with(Intent::Air, 25);
+        a.add(Intent::Leaf, 5);
+        assert_eq!(a[Intent::Leaf], 10);
+        a.add(Intent::Air, 15);
+        assert_eq!(a[Intent::Air], 30);
+        a.add(Intent::Air, 5);
+        assert_eq!(a[Intent::Air], 31);
+        a.add(Intent::Air, (4 * 9) + (5 * 5) + 3);
+        assert_eq!(a[Intent::Air], 45);
     }
 }

@@ -90,14 +90,14 @@ fn main() {
     App::new()
         .insert_resource(PlayerSettings::default())
         .insert_resource(GlobalAir {
-            substance: Substance {
-                mass: 100000,
-                values: [(Intent::Air, 500000)].into_iter().collect(),
-            },
+            substance: Substance::new(100000).with(Intent::Air, 500000),
         })
         .init_resource::<LeafAssets>()
         .insert_resource(StatsTimer(Timer::from_seconds(1.0, TimerMode::Repeating)))
-        .insert_resource(StemUpdateTimer(Timer::from_seconds(0.2, TimerMode::Repeating)))
+        .insert_resource(StemUpdateTimer(Timer::from_seconds(
+            0.2,
+            TimerMode::Repeating,
+        )))
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, setup)
         .add_systems(
@@ -129,10 +129,10 @@ fn setup(
     // stem — brown pillar
     commands.spawn((
         Stem {
-            substance: Substance {
-                mass: 100,
-                values: [(Intent::Plant, 1000), (Intent::Leaf, 50), (Intent::Growth, 20)].into_iter().collect(),
-            },
+            substance: Substance::new(100)
+                .with(Intent::Plant, 1000)
+                .with(Intent::Leaf, 50)
+                .with(Intent::Growth, 20),
             leaf: None,
         },
         Mesh3d(meshes.add(Cuboid::new(0.3, 1.0, 0.3))),
@@ -219,7 +219,9 @@ fn stem_system(
                 stem.leaf = None;
                 continue;
             }
-            let Ok(mut leaf) = leaves.get_mut(leaf_entity) else { continue };
+            let Ok(mut leaf) = leaves.get_mut(leaf_entity) else {
+                continue;
+            };
 
             let mut temp = Substance::default();
             interaction(
@@ -233,7 +235,6 @@ fn stem_system(
             push_intent(Intent::Plant, &mut leaf.substance, &mut stem.substance);
             balance_intent(Intent::Leaf, &mut stem.substance, &mut leaf.substance);
             internal_interaction(&mut leaf.substance);
-
         } else {
             let mut leaf_substance = Substance::default();
             interaction(
@@ -277,21 +278,13 @@ fn print_stats(
     if !timer.0.tick(time.delta()).just_finished() {
         return;
     }
+    air.substance.print("Air");
     println!("--- Air ---  mass: {}", air.substance.mass);
-    for (intent, val) in &air.substance.values {
-        println!("  {:?}: {}", intent, val);
-    }
     for stem in stems.iter() {
-        println!("--- Stem ---  mass: {}", stem.substance.mass);
-        for (intent, val) in &stem.substance.values {
-            println!("  {:?}: {}", intent, val);
-        }
+        stem.substance.print("Stem");
     }
     for leaf in leaves.iter() {
-        println!("--- Leaf ---  mass: {}", leaf.substance.mass);
-        for (intent, val) in &leaf.substance.values {
-            println!("  {:?}: {}", intent, val);
-        }
+        leaf.substance.print("Leaf");
     }
 }
 
