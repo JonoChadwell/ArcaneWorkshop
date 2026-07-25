@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 #[derive(Clone, Hash, Eq, PartialEq)]
-pub(crate) enum InteractionType {
+pub enum InteractionType {
     Internal,
     Contact,
     Life,
@@ -73,7 +73,7 @@ pub(crate) enum InteractionType {
 // LeafPlantLeaf Spirit
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
-pub(crate) enum Intent {
+pub enum Intent {
     Air,
     Plant,
     Leaf,
@@ -82,20 +82,20 @@ pub(crate) enum Intent {
 }
 
 #[derive(Default)]
-pub(crate) struct Substance {
-    pub(crate) mass: i32,
-    pub(crate) values: HashMap<Intent, i32>,
+pub struct Substance {
+    pub mass: i32,
+    pub values: HashMap<Intent, i32>,
 }
 
-pub(crate) fn check_intent(substance: &Substance, intent: Intent) -> i32 {
+pub fn check_intent(substance: &Substance, intent: Intent) -> i32 {
     *substance.values.get(&intent).unwrap_or(&0)
 }
 
-pub(crate) fn has_intent(substance: &Substance, intent: Intent) -> bool {
+pub fn has_intent(substance: &Substance, intent: Intent) -> bool {
     0 < *substance.values.get(&intent).unwrap_or(&0)
 }
 
-pub(crate) fn modify_intent(substance: &mut Substance, intent: Intent, delta: i32) {
+pub fn modify_intent(substance: &mut Substance, intent: Intent, delta: i32) {
     let value: &mut i32 = substance.values.entry(intent).or_insert(0);
     *value += delta;
     if *value < 0 {
@@ -103,24 +103,24 @@ pub(crate) fn modify_intent(substance: &mut Substance, intent: Intent, delta: i3
     }
 }
 
-pub(crate) fn set_intent(substance: &mut Substance, intent: Intent, value: i32) {
+pub fn set_intent(substance: &mut Substance, intent: Intent, value: i32) {
     substance.values.insert(intent, value);
 }
 
 
-pub(crate) fn push_intent(intent: Intent, from: &mut Substance, to: &mut Substance) {
+pub fn push_intent(intent: Intent, from: &mut Substance, to: &mut Substance) {
     let amount = from.values.insert(intent.clone(), 0).unwrap_or(0);
     *to.values.entry(intent).or_insert(0) += amount;
 }
 
-pub(crate) fn balance_intent(intent: Intent, a: &mut Substance, b: &mut Substance) {
+pub fn balance_intent(intent: Intent, a: &mut Substance, b: &mut Substance) {
     let total = check_intent(a, intent) + check_intent(b, intent);
     let new_a_val = total / 2;
     set_intent(a, intent, new_a_val);
     set_intent(b, intent, total - new_a_val);
 }
 
-pub(crate) fn internal_interaction(substance: &mut Substance) {
+pub fn internal_interaction(substance: &mut Substance) {
     let mut becomes = |source: Intent, intent: Intent, percent: i32| {
         if let Some(&val) = substance.values.get(&source) {
             let target = (val * percent) / 100;
@@ -192,7 +192,7 @@ fn fragment_pure(substance: &Substance, fragment_mass: i32) -> (Substance, Subst
     (remainder, fragment)
 }
 
-pub(crate) fn fragment(substance: &mut Substance, fragment_mass: i32) -> Substance {
+pub fn fragment(substance: &mut Substance, fragment_mass: i32) -> Substance {
     let original_mass = substance.mass;
     assert!(0 < fragment_mass);
     assert!(original_mass > fragment_mass);
@@ -217,7 +217,7 @@ pub(crate) fn fragment(substance: &mut Substance, fragment_mass: i32) -> Substan
     new_substance
 }
 
-pub(crate) fn substance_add(substance: &mut Substance, add: Substance) {
+pub fn substance_add(substance: &mut Substance, add: Substance) {
     substance.mass += add.mass;
     for (intent, value) in add.values {
         *substance.values.entry(intent).or_insert(0) += value;
@@ -227,7 +227,7 @@ pub(crate) fn substance_add(substance: &mut Substance, add: Substance) {
 // TODO eventually rules for interactions should be categorized and driven by
 // categories (for example there will be many interactions that work like plant
 // => leaf with a fixed % transformation target).
-pub(crate) fn interaction(
+pub fn interaction(
     interaction_type: InteractionType,
     a: &mut Substance,
     b: &mut Substance,
