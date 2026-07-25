@@ -191,9 +191,14 @@ impl Substance {
         self.set(intent, total_val - other_val);
         other.set(intent, other_val);
     }
+
+    pub fn pin(&mut self, intent: Intent) {
+        self.set(intent, self.mass);
+    }
 }
 
-pub fn internal_interaction(substance: &mut Substance) {
+pub fn internal_interaction(substance: &mut Substance) -> bool {
+    let mut dirty = false;
     let mut becomes = |source: Intent, dest: Intent, target_percent: i32, speed_percent: i32| {
         if let Some(&val) = substance.values.get(&source) {
             let target_val = val * target_percent / 100;
@@ -202,22 +207,27 @@ pub fn internal_interaction(substance: &mut Substance) {
                 let delta = std::cmp::max(1, (target_val - dest_val) * speed_percent / 100);
                 substance.sub(source, delta);
                 substance.add_flat(dest, delta);
+                dirty = true;
             }
         }
     };
 
-    becomes(Plant, Leaf, 5, 10);
-    becomes(Plant, Growth, 2, 10);
+    becomes(Plant, Leaf, 25, 25);
+    becomes(Plant, Growth, 2, 25);
 
-    let mut merge_one = |a: Intent, b: Intent, into: Intent| {
-        if substance.has(a) && substance.has(b) {
-            substance.sub(a, 1);
-            substance.sub(b, 1);
-            substance.add(into, 2);
+    let mut merge_all = |a: Intent, b: Intent, into: Intent, speed: i32| {
+        assert!(speed <= 100);
+        let amount = std::cmp::min(substance[a], substance[b]);
+        if 0 < amount {
+            let amount = std::cmp::max(1, amount * speed / 100);
+            substance.sub(a, amount);
+            substance.sub(b, amount);
+            substance.add(into, 2 * amount);
+            dirty = true;
         }
     };
 
-    merge_one(Leaf, Air, Plant);
+    merge_all(Leaf, Air, Plant, 50);
 
     let mut merges = |a: Intent, b: Intent, into: Intent, percent: i32| {
         let target = (std::cmp::min(substance[a], substance[b]) * percent) / 100;
@@ -225,10 +235,12 @@ pub fn internal_interaction(substance: &mut Substance) {
             substance.sub(a, 1);
             substance.sub(b, 1);
             substance.add(into, 2);
+            dirty = true;
         }
     };
 
     merges(Leaf, Growth, AbsorbAir, 90);
+    return dirty;
 }
 
 fn fragment_pure(substance: &Substance, fragment_mass: i32) -> (Substance, Substance) {

@@ -90,7 +90,7 @@ fn main() {
     App::new()
         .insert_resource(PlayerSettings::default())
         .insert_resource(GlobalAir {
-            substance: Substance::new(100000).with(Intent::Air, 500000),
+            substance: Substance::new(100000).with(Intent::Air, 100000),
         })
         .init_resource::<LeafAssets>()
         .insert_resource(StatsTimer(Timer::from_seconds(1.0, TimerMode::Repeating)))
@@ -129,10 +129,8 @@ fn setup(
     // stem — brown pillar
     commands.spawn((
         Stem {
-            substance: Substance::new(100)
-                .with(Intent::Plant, 1000)
-                .with(Intent::Leaf, 50)
-                .with(Intent::Growth, 20),
+            substance: Substance::new(10000)
+                .with(Intent::Plant, 10000),
             leaf: None,
         },
         Mesh3d(meshes.add(Cuboid::new(0.3, 1.0, 0.3))),
@@ -211,8 +209,9 @@ fn stem_system(
     if !timer.0.tick(time.delta()).just_finished() {
         return;
     }
+    air.substance.pin(Intent::Air);
     for (_entity, mut stem) in stems.iter_mut() {
-        internal_interaction(&mut stem.substance);
+        let stem_changed = internal_interaction(&mut stem.substance);
 
         if let Some(leaf_entity) = stem.leaf {
             if !leaves.contains(leaf_entity) {
@@ -235,7 +234,7 @@ fn stem_system(
             leaf.substance.push(Intent::Plant, &mut stem.substance);
             stem.substance.balance(Intent::Leaf, &mut leaf.substance);
             internal_interaction(&mut leaf.substance);
-        } else {
+        } else if !stem_changed {
             let mut leaf_substance = Substance::default();
             interaction(
                 InteractionType::Contact,
@@ -273,13 +272,10 @@ fn print_stats(
     mut timer: ResMut<StatsTimer>,
     stems: Query<&Stem>,
     leaves: Query<&Leaf>,
-    air: Res<GlobalAir>,
 ) {
     if !timer.0.tick(time.delta()).just_finished() {
         return;
     }
-    air.substance.print("Air");
-    println!("--- Air ---  mass: {}", air.substance.mass);
     for stem in stems.iter() {
         stem.substance.print("Stem");
     }
